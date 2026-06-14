@@ -21,6 +21,10 @@ function App() {
   const [studentName, setStudentName] = useState('')
   const [studentEmail, setStudentEmail] = useState('')
 
+  // Roster: which course's roster is open, and its students
+  const [rosterCourseId, setRosterCourseId] = useState(null)
+  const [roster, setRoster] = useState([])
+
   // --- Loaders ---
   async function loadCourses() {
     const res = await fetch(COURSES_API)
@@ -49,6 +53,7 @@ function App() {
   }
   async function deleteCourse(id) {
     await fetch(`${COURSES_API}/${id}`, { method: 'DELETE' })
+    if (rosterCourseId === id) setRosterCourseId(null) // close roster if open
     loadCourses()
   }
   function startEdit(course) {
@@ -63,6 +68,16 @@ function App() {
     })
     setEditingId(null)
     loadCourses()
+  }
+  // Show the roster for a course (toggle: click again to close)
+  async function viewRoster(courseId) {
+    if (rosterCourseId === courseId) {
+      setRosterCourseId(null)
+      return
+    }
+    const res = await fetch(`${COURSES_API}/${courseId}/students`)
+    setRoster(await res.json())
+    setRosterCourseId(courseId)
   }
 
   // --- Student actions ---
@@ -82,9 +97,22 @@ function App() {
   }
   // Enroll a student in a course
   async function enroll(studentId, courseId) {
-    if (!courseId) return // ignore the empty "-- enroll --" option
+    if (!courseId) return
     await fetch(`${STUDENTS_API}/${studentId}/enroll/${courseId}`, { method: 'POST' })
-    loadStudents()
+    refreshAfterEnrollmentChange()
+  }
+  // Unenroll a student from a course
+  async function unenroll(studentId, courseId) {
+    await fetch(`${STUDENTS_API}/${studentId}/enroll/${courseId}`, { method: 'DELETE' })
+    refreshAfterEnrollmentChange()
+  }
+  // After any enrollment change, reload students — and the roster if one's open
+  async function refreshAfterEnrollmentChange() {
+    await loadStudents()
+    if (rosterCourseId !== null) {
+      const res = await fetch(`${COURSES_API}/${rosterCourseId}/students`)
+      setRoster(await res.json())
+    }
   }
 
   return (
@@ -116,6 +144,9 @@ function App() {
                       <td style={td}>{course.name}</td>
                       <td style={td}>{course.instructor}</td>
                       <td style={td}>
+                        <button onClick={() => viewRoster(course.id)} style={rowBtn}>
+                          {rosterCourseId === course.id ? 'Hide' : 'Roster'}
+                        </button>
                         <button onClick={() => startEdit(course)} style={rowBtn}>Edit</button>
                         <button onClick={() => deleteCourse(course.id)} style={greyBtn}>Delete</button>
                       </td>
@@ -125,6 +156,24 @@ function App() {
           ))}
           </tbody>
         </table>
+
+        {/* ROSTER PANEL — shows when a course's Roster button is active */}
+        {rosterCourseId !== null && (
+            <div style={rosterPanel}>
+              <strong>
+                Roster — {courses.find(c => c.id === rosterCourseId)?.code}
+              </strong>
+              {roster.length > 0 ? (
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+                    {roster.map(student => (
+                        <li key={student.id}>{student.name} ({student.email})</li>
+                    ))}
+                  </ul>
+              ) : (
+                  <p style={{ margin: '8px 0 0', color: '#999' }}>No students enrolled yet.</p>
+              )}
+            </div>
+        )}
 
         <form onSubmit={addCourse} style={formStyle}>
           <input value={code} onChange={e => setCode(e.target.value)} placeholder="Code (e.g. CSCI 2110)" required style={input} />
@@ -146,7 +195,16 @@ function App() {
                 <td style={td}>{student.email}</td>
                 <td style={td}>
                   {student.courses && student.courses.length > 0
-                      ? student.courses.map(c => c.code).join(', ')
+                      ? student.courses.map(c => (
+                          <span key={c.id} style={chip}>
+                        {c.code}
+                            <button
+                                onClick={() => unenroll(student.id, c.id)}
+                                style={chipX}
+                                title={`Unenroll from ${c.code}`}
+                            >×</button>
+                      </span>
+                      ))
                       : <span style={{ color: '#999' }}>none</span>}
                 </td>
                 <td style={td}>
@@ -183,5 +241,8 @@ const editInput = { padding: 4, border: '1px solid #ccc', borderRadius: 4 }
 const addBtn = { padding: '8px 16px', background: '#E8197A', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }
 const rowBtn = { padding: '4px 10px', background: '#E8197A', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: '0.85em', marginRight: 4 }
 const greyBtn = { padding: '4px 10px', background: '#888', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: '0.85em' }
+const chip = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fce4ef', color: '#E8197A', padding: '2px 8px', borderRadius: 12, marginRight: 6, fontSize: '0.85em' }
+const chipX = { background: 'none', border: 'none', color: '#E8197A', cursor: 'pointer', fontSize: '1.1em', lineHeight: 1, padding: 0 }
+const rosterPanel = { marginTop: 16, padding: 16, background: '#faf5f8', border: '1px solid #f0d6e4', borderRadius: 6 }
 
 export default App
