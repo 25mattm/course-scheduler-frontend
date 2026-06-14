@@ -21,9 +21,8 @@ function App() {
   const [studentName, setStudentName] = useState('')
   const [studentEmail, setStudentEmail] = useState('')
 
-  // Roster: which course's roster is open, and its students
-  const [rosterCourseId, setRosterCourseId] = useState(null)
-  const [roster, setRoster] = useState([])
+  // Open rosters: { [courseId]: [students] } — multiple can be open at once
+  const [openRosters, setOpenRosters] = useState({})
 
   // --- Loaders ---
   async function loadCourses() {
@@ -36,8 +35,11 @@ function App() {
   }
 
   useEffect(() => {
-    loadCourses()
-    loadStudents()
+    async function loadAll() {
+      await loadCourses()
+      await loadStudents()
+    }
+    void loadAll()
   }, [])
 
   // --- Course actions ---
@@ -49,12 +51,16 @@ function App() {
       body: JSON.stringify({ code, name, instructor })
     })
     setCode(''); setName(''); setInstructor('')
-    loadCourses()
+    await loadCourses()
   }
   async function deleteCourse(id) {
     await fetch(`${COURSES_API}/${id}`, { method: 'DELETE' })
-    if (rosterCourseId === id) setRosterCourseId(null) // close roster if open
-    loadCourses()
+    setOpenRosters(prev => {  // close this course's roster if open
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    await loadCourses()
   }
   function startEdit(course) {
     setEditingId(course.id)
@@ -67,17 +73,22 @@ function App() {
       body: JSON.stringify(editValues)
     })
     setEditingId(null)
-    loadCourses()
+    await loadCourses()
   }
-  // Show the roster for a course (toggle: click again to close)
+  // Toggle a course's roster open/closed (multiple can be open at once)
   async function viewRoster(courseId) {
-    if (rosterCourseId === courseId) {
-      setRosterCourseId(null)
+    if (openRosters[courseId]) {
+      // already open → close it by removing its entry
+      setOpenRosters(prev => {
+        const next = { ...prev }
+        delete next[courseId]
+        return next
+      })
       return
     }
     const res = await fetch(`${COURSES_API}/${courseId}/students`)
-    setRoster(await res.json())
-    setRosterCourseId(courseId)
+    const enrolled = await res.json()
+    setOpenRosters(prev => ({ ...prev, [courseId]: enrolled }))
   }
 
   // --- Student actions ---
@@ -89,29 +100,34 @@ function App() {
       body: JSON.stringify({ name: studentName, email: studentEmail })
     })
     setStudentName(''); setStudentEmail('')
-    loadStudents()
+    await loadStudents()
   }
   async function deleteStudent(id) {
     await fetch(`${STUDENTS_API}/${id}`, { method: 'DELETE' })
-    loadStudents()
+    await loadStudents()
   }
   // Enroll a student in a course
   async function enroll(studentId, courseId) {
     if (!courseId) return
     await fetch(`${STUDENTS_API}/${studentId}/enroll/${courseId}`, { method: 'POST' })
-    refreshAfterEnrollmentChange()
+    await refreshAfterEnrollmentChange()
   }
   // Unenroll a student from a course
   async function unenroll(studentId, courseId) {
     await fetch(`${STUDENTS_API}/${studentId}/enroll/${courseId}`, { method: 'DELETE' })
-    refreshAfterEnrollmentChange()
+    await refreshAfterEnrollmentChange()
   }
-  // After any enrollment change, reload students — and the roster if one's open
+  // After any enrollment change, reload students — and refresh every open roster
   async function refreshAfterEnrollmentChange() {
     await loadStudents()
-    if (rosterCourseId !== null) {
-      const res = await fetch(`${COURSES_API}/${rosterCourseId}/students`)
-      setRoster(await res.json())
+    const openIds = Object.keys(openRosters)
+    if (openIds.length > 0) {
+      const updated = {}
+      for (const id of openIds) {
+        const res = await fetch(`${COURSES_API}/${id}/students`)
+        updated[id] = await res.json()
+      }
+      setOpenRosters(updated)
     }
   }
 
@@ -127,53 +143,53 @@ function App() {
           </thead>
           <tbody>
           {courses.map(course => (
-              <tr key={course.id}>
-                {editingId === course.id ? (
-                    <>
-                      <td style={td}><input value={editValues.code} onChange={e => setEditValues({ ...editValues, code: e.target.value })} style={editInput} /></td>
-                      <td style={td}><input value={editValues.name} onChange={e => setEditValues({ ...editValues, name: e.target.value })} style={editInput} /></td>
-                      <td style={td}><input value={editValues.instructor} onChange={e => setEditValues({ ...editValues, instructor: e.target.value })} style={editInput} /></td>
-                      <td style={td}>
-                        <button onClick={() => saveEdit(course.id)} style={rowBtn}>Save</button>
-                        <button onClick={() => setEditingId(null)} style={greyBtn}>Cancel</button>
+              <>
+                <tr key={course.id}>
+                  {editingId === course.id ? (
+                      <>
+                        <td style={td}><input value={editValues.code} onChange={e => setEditValues({ ...editValues, code: e.target.value })} style={editInput} /></td>
+                        <td style={td}><input value={editValues.name} onChange={e => setEditValues({ ...editValues, name: e.target.value })} style={editInput} /></td>
+                        <td style={td}><input value={editValues.instructor} onChange={e => setEditValues({ ...editValues, instructor: e.target.value })} style={editInput} /></td>
+                        <td style={td}>
+                          <button onClick={() => saveEdit(course.id)} style={rowBtn}>Save</button>
+                          <button onClick={() => setEditingId(null)} style={greyBtn}>Cancel</button>
+                        </td>
+                      </>
+                  ) : (
+                      <>
+                        <td style={td}>{course.code}</td>
+                        <td style={td}>{course.name}</td>
+                        <td style={td}>{course.instructor}</td>
+                        <td style={td}>
+                          <button onClick={() => viewRoster(course.id)} style={rowBtn}>
+                            {openRosters[course.id] ? 'Hide' : 'Roster'}
+                          </button>
+                          <button onClick={() => startEdit(course)} style={rowBtn}>Edit</button>
+                          <button onClick={() => deleteCourse(course.id)} style={greyBtn}>Delete</button>
+                        </td>
+                      </>
+                  )}
+                </tr>
+                {openRosters[course.id] && (
+                    <tr key={`${course.id}-roster`}>
+                      <td colSpan={4} style={rosterCell}>
+                        <strong>Roster — {course.code}</strong>
+                        {openRosters[course.id].length > 0 ? (
+                            <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+                              {openRosters[course.id].map(student => (
+                                  <li key={student.id}>{student.name} ({student.email})</li>
+                              ))}
+                            </ul>
+                        ) : (
+                            <p style={{ margin: '6px 0 0', color: '#999' }}>No students enrolled yet.</p>
+                        )}
                       </td>
-                    </>
-                ) : (
-                    <>
-                      <td style={td}>{course.code}</td>
-                      <td style={td}>{course.name}</td>
-                      <td style={td}>{course.instructor}</td>
-                      <td style={td}>
-                        <button onClick={() => viewRoster(course.id)} style={rowBtn}>
-                          {rosterCourseId === course.id ? 'Hide' : 'Roster'}
-                        </button>
-                        <button onClick={() => startEdit(course)} style={rowBtn}>Edit</button>
-                        <button onClick={() => deleteCourse(course.id)} style={greyBtn}>Delete</button>
-                      </td>
-                    </>
+                    </tr>
                 )}
-              </tr>
+              </>
           ))}
           </tbody>
         </table>
-
-        {/* ROSTER PANEL — shows when a course's Roster button is active */}
-        {rosterCourseId !== null && (
-            <div style={rosterPanel}>
-              <strong>
-                Roster — {courses.find(c => c.id === rosterCourseId)?.code}
-              </strong>
-              {roster.length > 0 ? (
-                  <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
-                    {roster.map(student => (
-                        <li key={student.id}>{student.name} ({student.email})</li>
-                    ))}
-                  </ul>
-              ) : (
-                  <p style={{ margin: '8px 0 0', color: '#999' }}>No students enrolled yet.</p>
-              )}
-            </div>
-        )}
 
         <form onSubmit={addCourse} style={formStyle}>
           <input value={code} onChange={e => setCode(e.target.value)} placeholder="Code (e.g. CSCI 2110)" required style={input} />
@@ -243,6 +259,6 @@ const rowBtn = { padding: '4px 10px', background: '#E8197A', color: 'white', bor
 const greyBtn = { padding: '4px 10px', background: '#888', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: '0.85em' }
 const chip = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fce4ef', color: '#E8197A', padding: '2px 8px', borderRadius: 12, marginRight: 6, fontSize: '0.85em' }
 const chipX = { background: 'none', border: 'none', color: '#E8197A', cursor: 'pointer', fontSize: '1.1em', lineHeight: 1, padding: 0 }
-const rosterPanel = { marginTop: 16, padding: 16, background: '#faf5f8', border: '1px solid #f0d6e4', borderRadius: 6 }
+const rosterCell = { padding: '12px 16px', background: '#faf5f8', borderBottom: '1px solid #ddd' }
 
 export default App
