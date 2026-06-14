@@ -1,16 +1,40 @@
-# React + Vite
+# Course Scheduler — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A React interface for managing courses, students, and enrollments. Talks to a Spring Boot REST API and makes the many-to-many relationship between students and courses fully interactive — enroll, unenroll, and view rosters from both sides.
 
-Currently, two official plugins are available:
+This is the frontend half of a full-stack project. The Spring Boot backend lives in a separate repository: [course-scheduler](https://github.com/25mattm/course-scheduler).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+![Course Scheduler screenshot](src/assets/screenshot.png)
 
-## React Compiler
+## Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Full CRUD for courses (create, list, inline edit, delete)
+- Create and delete students
+- Enroll a student in a course via dropdown
+- Unenroll with a single click (the × on each enrolled-course chip)
+- View a course's roster inline, with multiple rosters open at once
+- Rosters and enrollment chips stay in sync automatically when enrollments change
 
-## Expanding the ESLint configuration
+## Tech stack
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **React** (functional components, hooks)
+- **Vite** for tooling and dev server
+- **fetch** for API calls
+
+## Running locally
+
+**Prerequisites:** Node.js, and the [backend](https://github.com/25mattm/course-scheduler) running on `http://localhost:8080`.
+
+**1. Install dependencies:**
+
+```bash
+npm install
+```
+
+**2. Start the dev server:**
+
+```bash
+npm run dev
+```
+
+The app runs on `http://localhost:5173` and expects the backend at `http://localhost:8080`. The backend allows requests from the Vite dev server via CORS configuration.
